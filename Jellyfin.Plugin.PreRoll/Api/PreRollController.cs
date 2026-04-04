@@ -40,7 +40,7 @@ public class PreRollController : ControllerBase
             {
                 Id = f.ItemId ?? string.Empty,
                 Name = f.Name ?? string.Empty,
-                CollectionType = f.CollectionType ?? "unknown"
+                CollectionType = f.CollectionType?.ToString() ?? "unknown"
             });
 
         return Ok(folders);
