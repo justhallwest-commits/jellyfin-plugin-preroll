@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -28,31 +27,20 @@ public class PreRollController : ControllerBase
     }
 
     /// <summary>
-    /// Returns all top-level Jellyfin libraries available for selection.
-    /// Used by the config page to populate both the "pre-roll source" and
-    /// "target content libraries" dropdowns.
+    /// Returns all virtual folders (libraries) for the config page.
+    /// Uses GetVirtualFolders() which returns CollectionType correctly in Jellyfin 10.11.
     /// </summary>
     [HttpGet("Libraries")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<IEnumerable<LibraryDto>> GetLibraries()
     {
-        var folders = _libraryManager.GetUserRootFolder().Children
-            .OfType<MediaBrowser.Controller.Entities.Folder>()
+        var folders = _libraryManager.GetVirtualFolders()
             .OrderBy(f => f.Name)
-            .Select(f =>
+            .Select(f => new LibraryDto
             {
-                // CollectionType may be string? or CollectionTypeOptions? depending on Jellyfin version.
-                // Convert to string safely via the object's ToString() — works for both.
-                var collectionType = f.CollectionType is null
-                    ? "unknown"
-                    : f.CollectionType.ToString()!.ToLowerInvariant();
-
-                return new LibraryDto
-                {
-                    Id = f.Id.ToString("N"),
-                    Name = f.Name,
-                    CollectionType = collectionType
-                };
+                Id = f.ItemId ?? string.Empty,
+                Name = f.Name ?? string.Empty,
+                CollectionType = f.CollectionType ?? "unknown"
             });
 
         return Ok(folders);
@@ -64,7 +52,7 @@ public class PreRollController : ControllerBase
 /// </summary>
 public sealed class LibraryDto
 {
-    /// <summary>Gets or sets the library ID (no hyphens).</summary>
+    /// <summary>Gets or sets the library ID.</summary>
     [Required]
     public string Id { get; set; } = string.Empty;
 
