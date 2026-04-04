@@ -12,9 +12,7 @@ namespace Jellyfin.Plugin.PreRoll;
 /// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
-    /// <summary>
-    /// Plugin GUID — must stay constant across releases.
-    /// </summary>
+    /// <summary>Plugin GUID — must stay constant across releases.</summary>
     public static readonly Guid PluginGuid = new("a4b2c3d4-e5f6-7890-abcd-ef1234567891");
 
     /// <summary>
@@ -35,10 +33,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <inheritdoc />
     public override string Description => "Plays pre-roll videos before movies and TV episodes across all Jellyfin clients.";
 
-    /// <summary>
-    /// Gets the singleton plugin instance.
-    /// </summary>
+    /// <summary>Gets the singleton plugin instance.</summary>
     public static Plugin? Instance { get; private set; }
+
+    /// <summary>
+    /// Gets or sets the shared PreRollManager instance.
+    /// Set by <see cref="PreRollIntroProvider"/> on first DI instantiation.
+    /// </summary>
+    public PreRollManager? Manager { get; set; }
 
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()

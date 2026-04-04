@@ -1,27 +1,4 @@
-using MediaBrowser.Common.Plugins;
-using MediaBrowser.Controller.Library;
-using Microsoft.Extensions.DependencyInjection;
-
-namespace Jellyfin.Plugin.PreRoll;
-
-/// <summary>
-/// Registers plugin services into Jellyfin's DI container.
-/// Called automatically by Jellyfin on plugin load.
-/// </summary>
-public class PluginServiceRegistrator : IPluginServiceRegistrator
-{
-    /// <inheritdoc />
-    public void RegisterServices(IServiceCollection serviceCollection)
-    {
-        // Core manager — singleton so the Random instance is shared
-        serviceCollection.AddSingleton<PreRollManager>();
-
-        // IIntroProvider — handles Web, iOS, Android, desktop clients
-        serviceCollection.AddSingleton<IIntroProvider, PreRollIntroProvider>();
-
-        // SessionInterceptor — handles Roku, Fire TV, and other non-/Intros clients
-        serviceCollection.AddHostedService<SessionInterceptor>();
-
-        // Note: PreRollController is auto-registered by Jellyfin's ASP.NET Core pipeline.
-    }
-}
+// IPluginServiceRegistrator was removed in Jellyfin 10.10+.
+// Jellyfin auto-discovers IIntroProvider implementations from the plugin assembly via DI.
+// The SessionInterceptor is started by PreRollIntroProvider's constructor,
+// which is itself auto-discovered and DI-instantiated by Jellyfin at startup.

@@ -2,29 +2,67 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Data.Entities;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.PreRoll;
 
 /// <summary>
 /// Provides pre-roll videos via the standard Jellyfin IIntroProvider interface.
-/// This handles clients that call the /Users/{userId}/Items/{itemId}/Intros endpoint:
-/// Jellyfin Web (browser), Jellyfin for iOS, Jellyfin for Android, Jellyfin Media Player.
+/// Handles clients that call /Users/{userId}/Items/{itemId}/Intros:
+/// Jellyfin Web, iOS, Android, Jellyfin Media Player, Swiftfin, Infuse.
+///
+/// Because Jellyfin auto-discovers and DI-instantiates this class, its constructor
+/// is also the ideal place to start the <see cref="SessionInterceptor"/> for
+/// non-/Intros clients (Roku, Fire TV) without needing IPluginServiceRegistrator.
 /// </summary>
 public class PreRollIntroProvider : IIntroProvider
 {
     private readonly PreRollManager _manager;
     private readonly ILogger<PreRollIntroProvider> _logger;
 
+    // Tracked so we only start one interceptor even if Jellyfin instantiates
+    // this class more than once (unlikely but defensive).
+    private static SessionInterceptor? _interceptor;
+    private static readonly object _interceptorLock = new();
+
     /// <summary>
     /// Initializes a new instance of the <see cref="PreRollIntroProvider"/> class.
+    /// All parameters are injected by Jellyfin's DI container.
     /// </summary>
-    public PreRollIntroProvider(PreRollManager manager, ILogger<PreRollIntroProvider> logger)
+    public PreRollIntroProvider(
+        ILibraryManager libraryManager,
+        ISessionManager sessionManager,
+        IServerConfigurationManager serverConfigManager,
+        ILoggerFactory loggerFactory)
     {
-        _manager = manager;
-        _logger = logger;
+        _logger = loggerFactory.CreateLogger<PreRollIntroProvider>();
+        _manager = new PreRollManager(libraryManager, loggerFactory.CreateLogger<PreRollManager>());
+
+        // Store on Plugin.Instance so other code can reach it.
+        if (Plugin.Instance != null)
+        {
+            Plugin.Instance.Manager = _manager;
+        }
+
+        // Start the session interceptor exactly once.
+        lock (_interceptorLock)
+        {
+            if (_interceptor == null)
+            {
+                _interceptor = new SessionInterceptor(
+                    sessionManager,
+                    serverConfigManager,
+                    _manager,
+                    loggerFactory.CreateLogger<SessionInterceptor>());
+
+                _interceptor.Start();
+                _logger.LogInformation("Pre-Roll Videos: SessionInterceptor started from PreRollIntroProvider.");
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -45,7 +83,7 @@ public class PreRollIntroProvider : IIntroProvider
         }
 
         _logger.LogInformation(
-            "Pre-Roll Videos [IIntroProvider]: Queuing '{PreRollName}' before '{ItemName}'",
+            "Pre-Roll Videos [IIntroProvider]: Queuing '{PreRoll}' before '{Item}'",
             preRoll.Name,
             item.Name);
 
