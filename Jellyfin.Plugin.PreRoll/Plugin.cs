@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
-using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Plugins;
@@ -12,11 +11,11 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.PreRoll;
 
 /// <summary>
-/// Pre-Roll Videos plugin main class.
-/// Starts the <see cref="SessionInterceptor"/> from its constructor —
-/// the reliable startup hook in Jellyfin 10.11 without IPluginServiceRegistrator.
+/// Pre-Roll Videos plugin entry point.
+/// Starts the SessionInterceptor from its constructor — the reliable
+/// startup hook in Jellyfin 10.11 without IPluginServiceRegistrator.
 /// </summary>
-public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
+public class PreRollPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     /// <summary>Plugin GUID — must stay constant across releases.</summary>
     public static readonly Guid PluginGuid = new("a4b2c3d4-e5f6-7890-abcd-ef1234567891");
@@ -24,13 +23,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     private readonly SessionInterceptor _interceptor;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="Plugin"/> class.
+    /// Initializes a new instance of the <see cref="PreRollPlugin"/> class.
     /// </summary>
-    public Plugin(
+    public PreRollPlugin(
         IApplicationPaths applicationPaths,
         IXmlSerializer xmlSerializer,
         ISessionManager sessionManager,
-        IServerConfigurationManager serverConfigManager,
         ILibraryManager libraryManager,
         ILoggerFactory loggerFactory)
         : base(applicationPaths, xmlSerializer)
@@ -42,12 +40,10 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
         _interceptor = new SessionInterceptor(
             sessionManager,
-            serverConfigManager,
             manager,
             loggerFactory.CreateLogger<SessionInterceptor>());
 
         _interceptor.Start();
-        loggerFactory.CreateLogger<Plugin>().LogInformation("Pre-Roll Videos plugin loaded and interceptor started.");
     }
 
     /// <inheritdoc />
@@ -60,7 +56,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override string Description => "Plays pre-roll videos before movies and TV episodes across all Jellyfin clients.";
 
     /// <summary>Gets the singleton plugin instance.</summary>
-    public static Plugin? Instance { get; private set; }
+    public static PreRollPlugin? Instance { get; private set; }
 
     /// <summary>Gets the shared pre-roll manager.</summary>
     public PreRollManager? Manager { get; private set; }
@@ -68,13 +64,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
     {
-        return new[]
-        {
+        return
+        [
             new PluginPageInfo
             {
                 Name = this.Name,
                 EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html"
             }
-        };
+        ];
     }
 }

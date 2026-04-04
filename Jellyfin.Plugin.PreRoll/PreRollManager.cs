@@ -5,7 +5,6 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.PreRoll;
@@ -17,7 +16,6 @@ public class PreRollManager
 {
     private readonly ILibraryManager _libraryManager;
     private readonly ILogger<PreRollManager> _logger;
-    private readonly Random _random = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PreRollManager"/> class.
@@ -29,8 +27,7 @@ public class PreRollManager
     }
 
     /// <summary>
-    /// Returns a randomly selected pre-roll item from the configured pre-roll libraries,
-    /// or <c>null</c> if none are configured or available.
+    /// Returns a randomly selected pre-roll item, or null if none are available.
     /// </summary>
     public BaseItem? GetRandomPreRoll()
     {
@@ -44,36 +41,39 @@ public class PreRollManager
         var items = new List<BaseItem>();
         foreach (var libraryId in libraryIds)
         {
+            // No IncludeItemTypes filter — BaseItemKind moved in 10.11.
+            // The pre-roll library should only contain video files anyway.
             var results = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 ParentId = libraryId,
-                IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Video },
                 IsVirtualItem = false,
-                Recursive = true
+                Recursive = true,
+                HasPath = true
             });
-            items.AddRange(results);
+            items.AddRange(results.Where(i => !string.IsNullOrEmpty(i.Path)));
         }
 
         if (items.Count == 0)
         {
-            _logger.LogWarning("Pre-Roll Videos: Pre-roll libraries are configured but contain no video items.");
+            _logger.LogWarning("Pre-Roll Videos: Pre-roll libraries configured but contain no items.");
             return null;
         }
 
-        var selected = items[_random.Next(items.Count)];
-        _logger.LogDebug("Pre-Roll Videos: Selected pre-roll '{Name}' (Id={Id})", selected.Name, selected.Id);
+        var selected = items[Random.Shared.Next(items.Count)];
+        _logger.LogDebug("Pre-Roll Videos: Selected '{Name}' (Id={Id})", selected.Name, selected.Id);
         return selected;
     }
 
     /// <summary>
-    /// Returns <c>true</c> if a pre-roll should play before <paramref name="item"/>.
+    /// Returns true if a pre-roll should play before this item.
     /// </summary>
     public bool ShouldPlayPreRoll(BaseItem item)
     {
-        var config = Plugin.Instance?.Configuration;
+        ArgumentNullException.ThrowIfNull(item);
+
+        var config = PreRollPlugin.Instance?.Configuration;
         if (config == null) return false;
 
-        // Type checks
         var isMovie = item is Movie;
         var isEpisode = item is Episode;
 
@@ -83,7 +83,6 @@ public class PreRollManager
 
         if (config.EnableForAllLibraries) return true;
 
-        // Check whether the item lives in a target library
         var targetIds = config.TargetLibraryIds
             .Select(id => Guid.TryParse(id, out var g) ? (Guid?)g : null)
             .Where(g => g.HasValue)
@@ -92,7 +91,6 @@ public class PreRollManager
 
         if (targetIds.Count == 0) return true;
 
-        // Walk up the item's parent chain to find the library root
         var parent = item.GetParent();
         while (parent != null)
         {
@@ -103,31 +101,9 @@ public class PreRollManager
         return false;
     }
 
-    /// <summary>
-    /// Returns <c>true</c> if <paramref name="item"/> is itself a pre-roll video
-    /// (i.e. lives inside a configured pre-roll library). Used by the session interceptor
-    /// to avoid recursively adding pre-rolls before pre-rolls.
-    /// </summary>
-    public bool IsPreRollItem(BaseItem item)
-    {
-        var preRollIds = GetPreRollLibraryIds().ToHashSet();
-        if (preRollIds.Count == 0) return false;
-
-        var parent = item.GetParent();
-        while (parent != null)
-        {
-            if (preRollIds.Contains(parent.Id)) return true;
-            parent = parent.GetParent();
-        }
-
-        return false;
-    }
-
-    // -------------------------------------------------------------------------
-
     private Guid[] GetPreRollLibraryIds()
     {
-        var config = Plugin.Instance?.Configuration;
+        var config = PreRollPlugin.Instance?.Configuration;
         if (config == null) return [];
 
         return config.PreRollLibraryIds
