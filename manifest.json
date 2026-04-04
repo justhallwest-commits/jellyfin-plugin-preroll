@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "a4b2c3d4-e5f6-7890-abcd-ef1234567891",
+    "name": "Pre-Roll Videos",
+    "description": "Plays pre-roll videos before movies and TV episodes across all Jellyfin clients.",
+    "overview": "A pre-roll plugin that supports both movies and TV shows, with client-specific engines for Web, iOS/Android, Roku, and Fire TV.",
+    "owner": "justhallwest-commits",
+    "category": "General",
+    "versions": []
+  }
+]
