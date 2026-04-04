@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Configuration;
-using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Logging;
@@ -11,56 +10,33 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.PreRoll;
 
 /// <summary>
-/// Intercepts playback start events and injects pre-roll videos for clients
-/// that do NOT call the /Intros endpoint.
-///
-/// Started by <see cref="PreRollIntroProvider"/>'s constructor (which Jellyfin
-/// auto-discovers and DI-instantiates), so no IHostedService registration needed.
+/// Intercepts playback start events and injects pre-roll videos for ALL clients.
 ///
 /// <list type="bullet">
-///   <item><b>Roku</b> — sends a PlayNow command with [preRoll, originalItem] as a playlist.</item>
+///   <item><b>All standard clients</b> (Web, iOS, Android, Roku, desktop) —
+///     sends a PlayNow command with [preRoll, originalItem] as a playlist.</item>
 ///   <item><b>Fire TV / Android TV</b> — sets Jellyfin's native ServerConfiguration.PreRollPath
-///     so the server prepends it at the transcode level. Resets after 3 minutes.</item>
+///     (workaround; SendPlayCommand crashes Fire TV). Resets after 3 minutes.</item>
 /// </list>
+///
+/// Started directly from <see cref="Plugin"/>'s constructor.
 /// </summary>
 public class SessionInterceptor : IDisposable
 {
-    // -----------------------------------------------------------------------
-    // Client identification
-    // -----------------------------------------------------------------------
-
-    /// <summary>
-    /// Clients that call /Intros themselves — handled by IIntroProvider, skip here.
-    /// </summary>
-    private static readonly string[] IntroProviderClientPrefixes =
-    [
-        "Jellyfin Web",
-        "Jellyfin Media Player",
-        "Jellyfin for iOS",
-        "Jellyfin for Android",
-        "Jellyfin Mobile",
-        "Infuse",
-        "Swiftfin"
-    ];
-
-    // -----------------------------------------------------------------------
-    // Dependencies
-    // -----------------------------------------------------------------------
-
     private readonly ISessionManager _sessionManager;
     private readonly IServerConfigurationManager _serverConfigManager;
     private readonly PreRollManager _manager;
     private readonly ILogger<SessionInterceptor> _logger;
 
     /// <summary>
-    /// Tracks session+item combos we have already queued a pre-roll for.
+    /// Tracks session+item combos already queued to prevent double pre-rolls.
     /// Key: "{sessionId}:{itemId}"
     /// </summary>
     private readonly ConcurrentDictionary<string, byte> _processedKeys = new();
 
     /// <summary>
-    /// Tracks pre-roll item IDs we intentionally enqueued, so their own
-    /// PlaybackStart event is ignored rather than triggering another pre-roll.
+    /// Tracks pre-roll item IDs we intentionally enqueued.
+    /// Their PlaybackStart event is skipped to avoid recursion.
     /// </summary>
     private readonly ConcurrentDictionary<Guid, byte> _scheduledPreRolls = new();
 
@@ -90,7 +66,7 @@ public class SessionInterceptor : IDisposable
     {
         _sessionManager.PlaybackStart += OnPlaybackStart;
         _sessionManager.PlaybackStopped += OnPlaybackStopped;
-        _logger.LogInformation("Pre-Roll Videos: SessionInterceptor subscribed to playback events.");
+        _logger.LogInformation("Pre-Roll Videos: SessionInterceptor started.");
     }
 
     /// <summary>Unsubscribes from session events.</summary>
@@ -98,7 +74,7 @@ public class SessionInterceptor : IDisposable
     {
         _sessionManager.PlaybackStart -= OnPlaybackStart;
         _sessionManager.PlaybackStopped -= OnPlaybackStopped;
-        _logger.LogInformation("Pre-Roll Videos: SessionInterceptor unsubscribed.");
+        _logger.LogInformation("Pre-Roll Videos: SessionInterceptor stopped.");
     }
 
     // -----------------------------------------------------------------------
@@ -140,20 +116,12 @@ public class SessionInterceptor : IDisposable
         // 1. Skip if this is a pre-roll we scheduled (avoid recursion).
         if (_scheduledPreRolls.TryRemove(item.Id, out _))
         {
-            _logger.LogDebug("Pre-Roll Videos: Skipping scheduled pre-roll '{Name}'.", item.Name);
+            _logger.LogDebug("Pre-Roll Videos: Skipping scheduled pre-roll item '{Name}'.", item.Name);
             return;
         }
 
-        // 2. Skip clients handled by IIntroProvider.
-        if (UsesIntroProvider(session))
-        {
-            _logger.LogDebug(
-                "Pre-Roll Videos: Skipping '{Client}' — handled by IIntroProvider.",
-                session.Client);
-            return;
-        }
-
-        // 3. Loop guard — prevents re-processing when original item plays after pre-roll.
+        // 2. Loop guard — prevents re-processing when the original item
+        //    starts playing after the pre-roll finishes.
         var key = BuildKey(session.Id, item.Id);
         if (!_processedKeys.TryAdd(key, 0))
         {
@@ -161,14 +129,14 @@ public class SessionInterceptor : IDisposable
             return;
         }
 
-        // 4. Eligibility check.
+        // 3. Eligibility check (movie/episode, library filter).
         if (!_manager.ShouldPlayPreRoll(item))
         {
             _processedKeys.TryRemove(key, out _);
             return;
         }
 
-        // 5. Pick a pre-roll.
+        // 4. Pick a pre-roll.
         var preRoll = _manager.GetRandomPreRoll();
         if (preRoll == null)
         {
@@ -176,10 +144,10 @@ public class SessionInterceptor : IDisposable
             return;
         }
 
-        // 6. Dispatch by client type.
+        // 5. Dispatch by client type.
         if (IsFireTvClient(session))
         {
-            await HandleFireTvAsync(session, preRoll).ConfigureAwait(false);
+            HandleFireTv(session, preRoll);
         }
         else
         {
@@ -188,8 +156,8 @@ public class SessionInterceptor : IDisposable
     }
 
     /// <summary>
-    /// Injects pre-roll via PlayNow with [preRoll, originalItem].
-    /// Works for Roku and other non-/Intros clients.
+    /// Sends a PlayNow command with [preRoll, originalItem].
+    /// Works for all standard clients: Web, iOS, Android, Roku, desktop.
     /// </summary>
     private async Task HandlePlaylistInjectionAsync(
         SessionInfo session,
@@ -197,9 +165,10 @@ public class SessionInterceptor : IDisposable
         MediaBrowser.Controller.Entities.BaseItem item)
     {
         _logger.LogInformation(
-            "Pre-Roll Videos [Playlist]: Queuing '{PreRoll}' before '{Item}' on '{Client}'.",
+            "Pre-Roll Videos: Queuing '{PreRoll}' before '{Item}' on '{Client}'.",
             preRoll.Name, item.Name, session.Client);
 
+        // Mark the pre-roll so its own PlaybackStart is ignored.
         _scheduledPreRolls.TryAdd(preRoll.Id, 0);
 
         try
@@ -219,7 +188,7 @@ public class SessionInterceptor : IDisposable
         {
             _logger.LogError(
                 ex,
-                "Pre-Roll Videos [Playlist]: Failed to send play command to '{Client}'.",
+                "Pre-Roll Videos: Failed to send play command to '{Client}'.",
                 session.Client);
             _scheduledPreRolls.TryRemove(preRoll.Id, out _);
         }
@@ -230,7 +199,7 @@ public class SessionInterceptor : IDisposable
     /// so the server prepends the video at the transcode level.
     /// Resets after 3 minutes.
     /// </summary>
-    private Task HandleFireTvAsync(
+    private void HandleFireTv(
         SessionInfo session,
         MediaBrowser.Controller.Entities.BaseItem preRoll)
     {
@@ -263,24 +232,11 @@ public class SessionInterceptor : IDisposable
                 _logger.LogWarning(ex, "Pre-Roll Videos [FireTV]: Failed to reset PreRollPath.");
             }
         }, TaskScheduler.Default);
-
-        return Task.CompletedTask;
     }
 
     // -----------------------------------------------------------------------
     // Client detection
     // -----------------------------------------------------------------------
-
-    private static bool UsesIntroProvider(SessionInfo session)
-    {
-        if (string.IsNullOrEmpty(session.Client)) return false;
-        foreach (var prefix in IntroProviderClientPrefixes)
-        {
-            if (session.Client.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
 
     private static bool IsFireTvClient(SessionInfo session)
     {

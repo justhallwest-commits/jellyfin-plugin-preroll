@@ -2,26 +2,52 @@ using System;
 using System.Collections.Generic;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.PreRoll;
 
 /// <summary>
 /// Pre-Roll Videos plugin main class.
+/// Starts the <see cref="SessionInterceptor"/> from its constructor —
+/// the reliable startup hook in Jellyfin 10.11 without IPluginServiceRegistrator.
 /// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     /// <summary>Plugin GUID — must stay constant across releases.</summary>
     public static readonly Guid PluginGuid = new("a4b2c3d4-e5f6-7890-abcd-ef1234567891");
 
+    private readonly SessionInterceptor _interceptor;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="Plugin"/> class.
     /// </summary>
-    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
+    public Plugin(
+        IApplicationPaths applicationPaths,
+        IXmlSerializer xmlSerializer,
+        ISessionManager sessionManager,
+        IServerConfigurationManager serverConfigManager,
+        ILibraryManager libraryManager,
+        ILoggerFactory loggerFactory)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+
+        var manager = new PreRollManager(libraryManager, loggerFactory.CreateLogger<PreRollManager>());
+        Manager = manager;
+
+        _interceptor = new SessionInterceptor(
+            sessionManager,
+            serverConfigManager,
+            manager,
+            loggerFactory.CreateLogger<SessionInterceptor>());
+
+        _interceptor.Start();
+        loggerFactory.CreateLogger<Plugin>().LogInformation("Pre-Roll Videos plugin loaded and interceptor started.");
     }
 
     /// <inheritdoc />
@@ -36,11 +62,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <summary>Gets the singleton plugin instance.</summary>
     public static Plugin? Instance { get; private set; }
 
-    /// <summary>
-    /// Gets or sets the shared PreRollManager instance.
-    /// Set by <see cref="PreRollIntroProvider"/> on first DI instantiation.
-    /// </summary>
-    public PreRollManager? Manager { get; set; }
+    /// <summary>Gets the shared pre-roll manager.</summary>
+    public PreRollManager? Manager { get; private set; }
 
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
