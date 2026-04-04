@@ -27,6 +27,28 @@ jobs:
       - name: Restore NuGet packages
         run: dotnet restore Jellyfin.Plugin.PreRoll/Jellyfin.Plugin.PreRoll.csproj
 
+      - name: Diagnose Jellyfin package namespaces
+        run: |
+          echo "=== Jellyfin packages in NuGet cache ==="
+          find ~/.nuget/packages -maxdepth 2 -type d -name "10.11*" | grep -i jellyfin | sort
+
+          echo ""
+          echo "=== Jellyfin DLLs ==="
+          find ~/.nuget/packages -path "*jellyfin*10.11*" -name "*.dll" 2>/dev/null | sort
+
+          echo ""
+          echo "=== Namespaces containing 'User' in Jellyfin assemblies ==="
+          find ~/.nuget/packages -path "*jellyfin*10.11*" -name "*.dll" 2>/dev/null | while read dll; do
+            echo "--- $(basename $dll) ---"
+            strings "$dll" 2>/dev/null | grep -E "^Jellyfin\.[A-Za-z.]+(User|Entities)" | sort -u | head -20
+          done
+
+          echo ""
+          echo "=== All top-level Jellyfin namespaces ==="
+          find ~/.nuget/packages -path "*jellyfin*10.11*" -name "*.dll" 2>/dev/null | while read dll; do
+            strings "$dll" 2>/dev/null | grep -oE "^Jellyfin\.[A-Za-z.]+" | sort -u
+          done | sort -u
+
       - name: Build (Release)
         run: |
           dotnet build Jellyfin.Plugin.PreRoll/Jellyfin.Plugin.PreRoll.csproj \
@@ -71,13 +93,13 @@ jobs:
           SOURCE_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/jellyfin-plugin-preroll.zip"
 
           python3 - <<EOF
-          import json
+          import json, sys
 
           with open('manifest.json', 'r') as f:
               manifest = json.load(f)
 
           new_version = {
-              "version": "${VERSION}.0",
+              "version": "${VERSION}",
               "changelog": "See https://github.com/${{ github.repository }}/releases/tag/v${VERSION}",
               "targetAbi": "10.11.0.0",
               "sourceUrl": "${SOURCE_URL}",
@@ -90,7 +112,7 @@ jobs:
           with open('manifest.json', 'w') as f:
               json.dump(manifest, f, indent=2)
 
-          print("manifest.json updated with version ${VERSION}.0")
+          print("manifest.json updated with version ${VERSION}")
           EOF
 
       - name: Commit updated manifest
