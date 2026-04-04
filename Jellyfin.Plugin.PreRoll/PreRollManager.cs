@@ -47,8 +47,7 @@ public class PreRollManager
             {
                 ParentId = libraryId,
                 IsVirtualItem = false,
-                Recursive = true,
-                HasPath = true
+                Recursive = true
             });
             items.AddRange(results.Where(i => !string.IsNullOrEmpty(i.Path)));
         }
