@@ -192,16 +192,24 @@
     // API calls
     // ----------------------------------------------------------------
     function loadLibraries(config) {
-        console.log('[PreRoll] Fetching libraries from', apiUrl('/PreRoll/Libraries'));
-        fetch(apiUrl('/PreRoll/Libraries'), { headers: authHeaders() })
+        console.log('[PreRoll] Fetching libraries from', apiUrl('/Library/VirtualFolders'));
+        fetch(apiUrl('/Library/VirtualFolders'), { headers: authHeaders() })
             .then(function (r) {
                 console.log('[PreRoll] Libraries response status:', r.status);
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
             })
             .then(function (libs) {
-                console.log('[PreRoll] Libraries loaded:', libs.length);
-                allLibraries = libs;
+                console.log('[PreRoll] Libraries loaded:', libs.length, libs[0]);
+                // Jellyfin's /Library/VirtualFolders returns ItemId, Name, CollectionType
+                // Normalize to lowercase id/name/collectionType for our render function
+                allLibraries = libs.map(function (f) {
+                    return {
+                        id: f.ItemId || f.itemId || f.id || '',
+                        name: f.Name || f.name || '',
+                        collectionType: f.CollectionType || f.collectionType || ''
+                    };
+                });
                 selectedSourceIds = (config.preRollLibraryIds || []).slice();
                 selectedTargetIds = (config.targetLibraryIds || []).slice();
                 renderGrid('preRollSourceGrid', libs, selectedSourceIds, function (id, add) {
