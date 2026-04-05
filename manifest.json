@@ -12,6 +12,14 @@
         "changelog": "See https://github.com/justhallwest-commits/jellyfin-plugin-preroll/releases/tag/v1.0.0.0",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/justhallwest-commits/jellyfin-plugin-preroll/releases/download/v1.0.0.0/jellyfin-plugin-preroll.zip",
+        "checksum": "41edaf7a3ef0fe6092f90375cd32ce83",
+        "timestamp": "2026-04-05T02:16:26Z"
+      },
+      {
+        "version": "1.0.0.0",
+        "changelog": "See https://github.com/justhallwest-commits/jellyfin-plugin-preroll/releases/tag/v1.0.0.0",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/justhallwest-commits/jellyfin-plugin-preroll/releases/download/v1.0.0.0/jellyfin-plugin-preroll.zip",
         "checksum": "5a4a4ef301ac459f4d6a3e79ea5681ec",
         "timestamp": "2026-04-05T02:06:21Z"
       },
